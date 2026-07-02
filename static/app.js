@@ -13,7 +13,7 @@
     let sessionId = null;       // 当前会话 id
     let dirty = false;          // 当前会话是否已产生过消息
 
-    const WELCOME = '你好！我是你的美食家助手。问我任何做菜问题，也可以上传照片，或直接把图片链接贴在消息里让我帮你分析～';
+    const WELCOME = '你好！我可以回答你的问题，也可以帮你分析图片。有什么想聊的？';
 
     function newId() {
       return 'web-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -202,7 +202,7 @@
       msg.className = 'msg ' + role;
       const avatar = document.createElement('div');
       avatar.className = 'avatar';
-      avatar.textContent = role === 'user' ? '🙂' : '🍳';
+      avatar.textContent = role === 'user' ? '🙂' : '🤖';
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       if (imageUrl) {
