@@ -206,13 +206,9 @@
       avatar.textContent = role === 'user' ? '🙂' : '🤖';
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      // 悬停删除按钮：欢迎语气泡（没有 id 时也挂上，但点击会 no-op）
-      const delBtn = document.createElement('button');
-      delBtn.className = 'del-msg';
-      delBtn.title = '删除这条消息';
-      delBtn.textContent = '🗑';
-      delBtn.onclick = (e) => { e.stopPropagation(); deleteMessage(msg); };
-      bubble.appendChild(delBtn);
+      // 悬停删除按钮：只挂在有 id 的气泡上（欢迎语、发送中未拿到 id 的新气泡先不显示，
+      // 拿到 ids 帧后 SSE 分支会调用 attachDelBtn 补上）
+      if (id) attachDelBtn(bubble, msg);
       if (imageUrl) {
         const img = document.createElement('img');
         img.src = imageUrl;
@@ -241,6 +237,17 @@
       messagesEl.appendChild(msg);
       messagesEl.scrollTop = messagesEl.scrollHeight;
       return { msgEl: msg, bubble, content, thinking, tools };
+    }
+
+    // —— 挂载单条删除按钮到某气泡上 ——
+    function attachDelBtn(bubble, msgEl) {
+      if (bubble.querySelector('.del-msg')) return;
+      const delBtn = document.createElement('button');
+      delBtn.className = 'del-msg';
+      delBtn.title = '删除这条消息';
+      delBtn.textContent = '🗑';
+      delBtn.onclick = (e) => { e.stopPropagation(); deleteMessage(msgEl); };
+      bubble.appendChild(delBtn);
     }
 
     // —— 单条消息删除：确认 → 调后端（同步删 message_store + 软删 checkpoint）→ 删 DOM ——
@@ -432,8 +439,14 @@
               tools.end(evt);
             } else if (evt.type === 'ids') {
               // 成功跑完后的 uuid 下发：挂到当前两个气泡上，此后单条删除才可用
-              if (evt.user_id && userMsgEl) userMsgEl.dataset.msgId = evt.user_id;
-              if (evt.ai_id && botMsgEl) botMsgEl.dataset.msgId = evt.ai_id;
+              if (evt.user_id && userMsgEl) {
+                userMsgEl.dataset.msgId = evt.user_id;
+                attachDelBtn(userMsgEl.querySelector('.bubble'), userMsgEl);
+              }
+              if (evt.ai_id && botMsgEl) {
+                botMsgEl.dataset.msgId = evt.ai_id;
+                attachDelBtn(botMsgEl.querySelector('.bubble'), botMsgEl);
+              }
             } else if (evt.type === 'error') {
               acc += '\n\n[出错了：' + evt.message + ']';
               content.innerHTML = renderMarkdown(acc);
