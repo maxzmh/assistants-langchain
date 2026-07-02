@@ -86,7 +86,7 @@ sessions.service.delete ──► history.service.clear   # 唯一跨包调用
 | `sessions.router` | POST `/api/session`、GET `/api/sessions`、POST `/api/delete` | — |
 | `history.service` | 封装 `SQLChatMessageHistory`；序列化给前端 | `get_history(sid)`, `serialize(sid) -> list[dict]`, `clear(sid)` |
 | `history.router` | GET `/api/history`、POST `/api/clear` | — |
-| `media.service` | 纯函数：抽 URL、组多模态 content。上传图片以 `(bytes, mime)` 形式传入（由 router 先 `await upload.read()`） | `extract_image_urls(text) -> (str, list[str])`, `build_content(text, image_bytes: bytes \| None, image_mime: str \| None, urls: list[str]) -> str \| list` |
+| `media.service` | 纯函数：抽 URL、组多模态 content。上传图片以 `(bytes, mime)` 形式传入（由 router 先 `await upload.read()`） | `extract_image_urls(text) -> (str, list[str])`, `build_content(text, image_bytes: bytes \| None, image_mime: str \| None, urls: list[str], original_message: str = "") -> str \| list` |
 | `chat.service` | 组 prompt、调 llm.stream、生成 SSE 帧、结束后写历史。**不做**图片读取、也不做标题 touch——那些在 router 完成。 | `stream_reply(sid, content) -> Generator[str]`（`content` 已是 str 或多模态 list） |
 | `chat.router` | POST `/api/chat`：async 路由；`await upload.read()` 拿字节 → `media.build_content` → `sessions.service.touch` → 转交 `chat.service.stream_reply` 返回 `StreamingResponse` | — |
 | `chat.prompts` | 系统提示词常量 | `SYSTEM_PROMPT: str` |
@@ -108,7 +108,7 @@ Browser ──form-data──► chat.router.chat(message, session_id, image, co
                           ▼
    image_bytes, image_mime = (await image.read(), image.content_type) if image else (None, None)
    text_only, url_list = media.service.extract_image_urls(message)
-   content = media.service.build_content(text_only, image_bytes, image_mime, url_list)
+   content = media.service.build_content(text_only, image_bytes, image_mime, url_list, original_message=message)
                           │
                           ▼
    sessions.service.touch(conn, sid, title=text_only[:20] or "图片消息")
