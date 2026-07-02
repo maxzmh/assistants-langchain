@@ -8,9 +8,22 @@ from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
-# 数据库文件路径：可用环境变量 COOK_DB_PATH 覆盖，默认落在项目根。
-DB_PATH: str = os.getenv("COOK_DB_PATH", "chat_history.db")
-DB_URL: str = f"sqlite:///{DB_PATH}"
+# Postgres DSN：必填。checkpointer + sessions 元数据 + 聊天历史都落在这一个库。
+# 例：postgresql://user:pwd@localhost:5432/cook
+POSTGRES_URL: str = os.environ.get("POSTGRES_URL", "").strip()
+if not POSTGRES_URL:
+    raise RuntimeError(
+        "环境变量 POSTGRES_URL 未设置。示例："
+        "POSTGRES_URL=postgresql://user:pwd@localhost:5432/cook"
+    )
+
+# SQLAlchemy 用的 DSN 变体：SQLChatMessageHistory 走 SA async engine，需要显式指定 driver。
+# 复用 psycopg v3（同 AsyncPostgresSaver），避免额外拉 asyncpg 依赖。
+POSTGRES_URL_SA: str = (
+    POSTGRES_URL
+    if POSTGRES_URL.startswith("postgresql+")
+    else POSTGRES_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+)
 
 
 def _patch_reasoning_passthrough() -> None:

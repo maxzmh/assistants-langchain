@@ -3,14 +3,12 @@ chat 路由：POST /api/chat。
 
 约定：async 层处理 UploadFile 读取；把纯字节交给同步的 media/chat 层。
 """
-import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.chat import service as chat_service
-from app.db import get_db
 from app.media import service as media
 from app.sessions import service as sessions_service
 
@@ -22,7 +20,6 @@ async def chat(
     message: str = Form(""),
     session_id: str = Form("default"),
     image: Optional[UploadFile] = File(None),
-    conn: sqlite3.Connection = Depends(get_db),
 ):
     """接收一条用户消息（含可选图片）+ session_id，以 SSE 流式返回模型回复。
 
@@ -48,7 +45,7 @@ async def chat(
 
     # 登记 / 更新会话（首条消息作为标题）
     title = (text_only or message or "图片消息").strip()[:20] or "图片消息"
-    sessions_service.touch(conn, session_id, title=title)
+    await sessions_service.touch(session_id, title=title)
 
     return StreamingResponse(
         chat_service.stream_reply(session_id, content),

@@ -85,7 +85,7 @@
         addMessage('bot', { text: WELCOME });
       } else {
         for (const m of msgs) {
-          addMessage(m.role, { text: m.text, imageUrl: m.image });
+          addMessage(m.role, { text: m.text, imageUrl: m.image, id: m.id });
         }
       }
       loadSessions();
@@ -197,14 +197,22 @@
       return html;
     }
 
-    function addMessage(role, { text = '', imageUrl = null } = {}) {
+    function addMessage(role, { text = '', imageUrl = null, id = null } = {}) {
       const msg = document.createElement('div');
       msg.className = 'msg ' + role;
+      if (id) msg.dataset.msgId = id;
       const avatar = document.createElement('div');
       avatar.className = 'avatar';
       avatar.textContent = role === 'user' ? '🙂' : '🤖';
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
+      // 悬停删除按钮：欢迎语气泡（没有 id 时也挂上，但点击会 no-op）
+      const delBtn = document.createElement('button');
+      delBtn.className = 'del-msg';
+      delBtn.title = '删除这条消息';
+      delBtn.textContent = '🗑';
+      delBtn.onclick = (e) => { e.stopPropagation(); deleteMessage(msg); };
+      bubble.appendChild(delBtn);
       if (imageUrl) {
         const img = document.createElement('img');
         img.src = imageUrl;
@@ -232,7 +240,22 @@
       msg.appendChild(bubble);
       messagesEl.appendChild(msg);
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      return { bubble, content, thinking, tools };
+      return { msgEl: msg, bubble, content, thinking, tools };
+    }
+
+    // —— 单条消息删除：确认 → 调后端（同步删 message_store + 软删 checkpoint）→ 删 DOM ——
+    async function deleteMessage(msgEl) {
+      const id = msgEl.dataset.msgId;
+      if (!id) return;   // 欢迎语等无 id 气泡不可删
+      if (!confirm('删除这条消息？删除后 AI 将不再记得它。')) return;
+      const form = new FormData();
+      form.append('session_id', sessionId);
+      form.append('message_id', id);
+      try {
+        const r = await fetch('/api/message/delete', { method: 'POST', body: form });
+        const data = await r.json();
+        if (data.ok) msgEl.remove();
+      } catch (_) {}
     }
 
     // —— 思考区：一个可折叠的灰色小块，实时追加 reasoning delta ——
@@ -360,6 +383,8 @@
       const bubbleText = selectedFile ? raw : cleanText;
 
       addMessage('user', { text: bubbleText, imageUrl: bubbleImg });
+      // 记录当前这条用户气泡，等 SSE 里 ids 帧下发后补 uuid
+      const userMsgEl = messagesEl.lastElementChild;
 
       const form = new FormData();
       form.append('message', raw);      // 原始文本给后端（含 URL，后端会自行解析）
@@ -376,7 +401,7 @@
       const wasFirst = !dirty;  // 首条消息发送后需刷新列表（标题会更新）
       dirty = true;
 
-      const { bubble, content, thinking, tools } = addMessage('bot', { text: '' });
+      const { msgEl: botMsgEl, bubble, content, thinking, tools } = addMessage('bot', { text: '' });
       bubble.classList.add('streaming');
       let acc = '';  // 累积的最终正文 Markdown
 
@@ -405,6 +430,10 @@
               tools.start(evt);
             } else if (evt.type === 'tool_end') {
               tools.end(evt);
+            } else if (evt.type === 'ids') {
+              // 成功跑完后的 uuid 下发：挂到当前两个气泡上，此后单条删除才可用
+              if (evt.user_id && userMsgEl) userMsgEl.dataset.msgId = evt.user_id;
+              if (evt.ai_id && botMsgEl) botMsgEl.dataset.msgId = evt.ai_id;
             } else if (evt.type === 'error') {
               acc += '\n\n[出错了：' + evt.message + ']';
               content.innerHTML = renderMarkdown(acc);

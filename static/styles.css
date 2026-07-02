@@ -79,9 +79,22 @@
     .msg.user .avatar { background: var(--primary); color: #fff; }
     .msg.bot .avatar { background: var(--primary-soft); }
     .bubble {
+      position: relative;
       padding: 10px 14px; border-radius: 14px; line-height: 1.6;
       font-size: 15px; white-space: pre-wrap; word-break: break-word;
     }
+    /* 悬停显示的单条删除按钮 */
+    .bubble .del-msg {
+      position: absolute; top: 4px; right: 4px;
+      width: 22px; height: 22px; padding: 0; line-height: 22px;
+      border: none; background: rgba(0,0,0,.08); color: inherit;
+      border-radius: 50%; font-size: 12px; cursor: pointer;
+      opacity: 0; transition: opacity .15s;
+    }
+    .msg:hover .bubble .del-msg { opacity: 1; }
+    .bubble .del-msg:hover { background: rgba(0,0,0,.2); }
+    .msg.user .bubble .del-msg { background: rgba(255,255,255,.25); }
+    .msg.user .bubble .del-msg:hover { background: rgba(255,255,255,.45); }
     .msg.user .bubble { background: var(--primary); color: #fff; border-top-right-radius: 4px; }
     .msg.bot .bubble { background: var(--bg); border-top-left-radius: 4px; }
     .bubble img { max-width: 220px; border-radius: 10px; margin-bottom: 8px; display: block; }
