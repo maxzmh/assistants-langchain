@@ -8,16 +8,23 @@ Agent runner：跑 LangChain 1.x 的 create_agent，把 astream_events 的事件
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from pyexpat import model
 from typing import Any, AsyncGenerator, List, Union
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain.agents import create_agent
-from langchain.agents.middleware import SummarizationMiddleware
+from langchain.agents.middleware import (
+    FilesystemFileSearchMiddleware,
+    SummarizationMiddleware,
+)
 from app.agent.tools import build_tools
 from app.chat.prompts import SYSTEM_PROMPT
 from app.config import get_llm
 from app.history import service as history_service
+
+# 项目根/docs：文档搜索工具的沙箱边界。middleware 只允许在此根内 glob/grep。
+_DOCS_ROOT = Path(__file__).resolve().parents[2] / "docs"
 
 # 单例 agent：Doubao 客户端 + tools 都不便宜，构建一次即可
 _agent = None
@@ -30,10 +37,19 @@ def _get_agent():
             model=get_llm(),
             tools=build_tools(),
             system_prompt=SYSTEM_PROMPT,
-            middleware=[SummarizationMiddleware(
-                model=get_llm(), 
-                trigger=("tokens", 4000),
-                keep=("messages", 20),)],
+            middleware=[
+                SummarizationMiddleware(
+                    model=get_llm(),
+                    trigger=("tokens", 4000),
+                    keep=("messages", 20),
+                ),
+                # 让 agent 能在项目 docs/ 下用 glob_search / grep_search 找本地资料。
+                # 未装系统 ripgrep 时会自动回退到纯 Python 实现，功能一致、速度更慢。
+                FilesystemFileSearchMiddleware(
+                    root_path=str(_DOCS_ROOT),
+                    max_file_size_mb=5,
+                ),
+            ],
         )
     return _agent
 
@@ -88,7 +104,10 @@ async def stream_events(
     final_text_parts: List[str] = []
     finished_ok = False
     try:
-        async for event in _get_agent().astream_events({"messages": input_msgs}):
+        async for event in _get_agent().astream_events(
+            {"messages": input_msgs},
+            config={"recursion_limit": 50},
+        ):
             kind = event.get("event")
             data = event.get("data") or {}
 
