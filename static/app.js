@@ -210,12 +210,19 @@
         img.src = imageUrl;
         bubble.appendChild(img);
       }
-      // 内容容器：助手消息渲染 Markdown，用户消息保持纯文本
-      const content = document.createElement('div');
-      content.style.display = 'inline';
+      // 助手消息：思考区 + 工具区 + 正文区（三段结构，都可能为空）
+      let thinking = null, tools = null;
       if (role === 'bot') {
         bubble.classList.add('md');
-        content.style.display = 'block';
+        thinking = createThinkingBlock();
+        tools = createToolsBlock();
+        bubble.appendChild(thinking.root);
+        bubble.appendChild(tools.root);
+      }
+      // 正文容器：助手渲染 Markdown，用户保持纯文本
+      const content = document.createElement('div');
+      content.style.display = role === 'bot' ? 'block' : 'inline';
+      if (role === 'bot') {
         if (text) content.innerHTML = renderMarkdown(text);
       } else {
         content.textContent = text;
@@ -225,16 +232,120 @@
       msg.appendChild(bubble);
       messagesEl.appendChild(msg);
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      return { bubble, content };
+      return { bubble, content, thinking, tools };
     }
 
-    // —— 从文本里抽取图片 URL（与后端 _IMAGE_URL_RE 保持一致的规则）——
-    const IMAGE_URL_RE = /https?:\/\/[^\s<>"'，,、]+?\.(?:jpg|jpeg|png|webp|gif|bmp)(?:\?[^\s<>"'，,、]*)?/gi;
+    // —— 思考区：一个可折叠的灰色小块，实时追加 reasoning delta ——
+    function createThinkingBlock() {
+      const root = document.createElement('details');
+      root.className = 'thinking hidden';
+      root.open = true;
+      const summary = document.createElement('summary');
+      summary.innerHTML = '<span class="dot"></span><span class="label">思考中…</span>';
+      const body = document.createElement('div');
+      body.className = 'thinking-body';
+      root.appendChild(summary);
+      root.appendChild(body);
+      let acc = '';
+      let started = null;
+      return {
+        root,
+        append(delta) {
+          if (started === null) started = performance.now();
+          root.classList.remove('hidden');
+          acc += delta;
+          body.textContent = acc;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        },
+        finish() {
+          if (started === null) return;               // 从未收到 reasoning
+          const secs = Math.max(1, Math.round((performance.now() - started) / 1000));
+          summary.querySelector('.label').textContent = `已思考 ${secs} 秒`;
+          summary.querySelector('.dot').classList.add('done');
+          root.open = false;                           // 结束后自动收起
+        },
+      };
+    }
+
+    // —— 工具区：一条工具一张小卡片，运行中转圈，结束后展示耗时 + 结果预览 ——
+    function createToolsBlock() {
+      const root = document.createElement('div');
+      root.className = 'tools hidden';
+      const cards = new Map();   // run_id -> {card, statusEl, outEl, startedAt}
+      return {
+        root,
+        start({ id, name, input }) {
+          root.classList.remove('hidden');
+          const card = document.createElement('div');
+          card.className = 'tool running';
+          const inputStr = input ? JSON.stringify(input) : '';
+          card.innerHTML =
+            '<div class="tool-head">' +
+              '<span class="spin"></span>' +
+              '<span class="name">🔧 ' + escapeHtml(name || 'tool') + '</span>' +
+              '<span class="args">' + escapeHtml(inputStr) + '</span>' +
+              '<span class="status">运行中…</span>' +
+            '</div>' +
+            '<pre class="tool-out"></pre>';
+          root.appendChild(card);
+          const statusEl = card.querySelector('.status');
+          const outEl = card.querySelector('.tool-out');
+          outEl.style.display = 'none';
+          cards.set(id, { card, statusEl, outEl, startedAt: performance.now() });
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        },
+        end({ id, output }) {
+          const c = cards.get(id);
+          if (!c) return;
+          const secs = ((performance.now() - c.startedAt) / 1000).toFixed(1);
+          c.card.classList.remove('running');
+          c.card.classList.add('done');
+          c.card.querySelector('.spin')?.remove();
+          c.statusEl.textContent = `完成 · ${secs}s`;
+          const outStr = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+          if (outStr && outStr !== 'null' && outStr !== '""') {
+            c.outEl.textContent = outStr.length > 800 ? outStr.slice(0, 800) + ' …' : outStr;
+            c.outEl.style.display = 'block';
+          }
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        },
+      };
+    }
+
+    // —— 从文本里抽取图片 URL（与后端 media.extract_image_urls 保持一致的规则）——
+    //   A) Markdown ![alt](url)  B) <img src="url">
+    //   C) 裸 URL 命中「扩展名 或 图床/CDN 主机白名单」
+    const URL_TOKEN = /https?:\/\/[^\s<>"'，,、]+/g;
+    const MD_IMAGE_RE = /!\[[^\]]*\]\((https?:\/\/[^\s<>"'，,、]+)\)/g;
+    const HTML_IMG_RE = /<img\b[^>]*?\bsrc\s*=\s*['"](https?:\/\/[^\s<>"'，,、]+)['"][^>]*>/gi;
+    const IMAGE_EXT_RE = /\.(?:jpg|jpeg|png|webp|gif|bmp|svg|avif|heic|heif|tiff)(?:$|[?#])/i;
+    const IMAGE_HOST_SUFFIXES = [
+      'imgur.com', 'sinaimg.cn', 'qpic.cn', 'qlogo.cn', 'hdslb.com',
+      'cdn.discordapp.com', 'pbs.twimg.com',
+    ];
+    function looksLikeImageUrl(url) {
+      if (IMAGE_EXT_RE.test(url)) return true;
+      let u;
+      try { u = new URL(url); } catch (_) { return false; }
+      const host = (u.hostname || '').toLowerCase();
+      if (IMAGE_HOST_SUFFIXES.some(s => host === s || host.endsWith('.' + s))) return true;
+      if (host.endsWith('aliyuncs.com') && (u.search || '').includes('x-oss-process=image')) return true;
+      if (host.endsWith('cloudinary.com') && (u.pathname || '').includes('/image/upload/')) return true;
+      return false;
+    }
     function extractImageUrls(text) {
-      const urls = (text || '').match(IMAGE_URL_RE) || [];
-      if (!urls.length) return { text, urls: [] };
-      const cleaned = text.replace(IMAGE_URL_RE, '').trim();
-      return { text: cleaned, urls: [...new Set(urls)] };
+      if (!text) return { text, urls: [] };
+      const urls = [];
+      const seen = new Set();
+      const push = (u) => { if (u && !seen.has(u)) { seen.add(u); urls.push(u); } };
+      let cleaned = text.replace(MD_IMAGE_RE, (_, u) => { push(u); return ''; });
+      cleaned = cleaned.replace(HTML_IMG_RE, (_, u) => { push(u); return ''; });
+      cleaned = cleaned.replace(URL_TOKEN, (u) => {
+        if (looksLikeImageUrl(u)) { push(u); return ''; }
+        return u;
+      });
+      cleaned = cleaned.replace(/[ \t]+/g, ' ').trim();
+      return { text: cleaned, urls };
     }
 
     async function send() {
@@ -265,9 +376,9 @@
       const wasFirst = !dirty;  // 首条消息发送后需刷新列表（标题会更新）
       dirty = true;
 
-      const { bubble, content } = addMessage('bot', { text: '' });
+      const { bubble, content, thinking, tools } = addMessage('bot', { text: '' });
       bubble.classList.add('streaming');
-      let acc = '';  // 累积的原始 Markdown 文本
+      let acc = '';  // 累积的最终正文 Markdown
 
       try {
         const resp = await fetch('/api/chat', { method: 'POST', body: form });
@@ -285,17 +396,32 @@
             if (!line.startsWith('data: ')) continue;
             const payload = line.slice(6);
             if (payload === '[DONE]') continue;
-            try {
-              const { delta } = JSON.parse(payload);
-              acc += delta;
-              // 流式过程中实时渲染 Markdown，并在末尾显示闪烁光标
-              content.innerHTML = renderMarkdown(acc) + '<span class="cursor"></span>';
-              messagesEl.scrollTop = messagesEl.scrollHeight;
-            } catch (_) {}
+            let evt;
+            try { evt = JSON.parse(payload); } catch (_) { continue; }
+            // 事件类型分发；旧格式 {delta:"..."} 也兼容一下
+            if (evt.type === 'reasoning' && evt.delta) {
+              thinking.append(evt.delta);
+            } else if (evt.type === 'tool_start') {
+              tools.start(evt);
+            } else if (evt.type === 'tool_end') {
+              tools.end(evt);
+            } else if (evt.type === 'error') {
+              acc += '\n\n[出错了：' + evt.message + ']';
+              content.innerHTML = renderMarkdown(acc);
+            } else {
+              const delta = evt.type === 'delta' ? evt.text : evt.delta;
+              if (delta) {
+                acc += delta;
+                content.innerHTML = renderMarkdown(acc) + '<span class="cursor"></span>';
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+              }
+            }
           }
         }
+        thinking.finish();
         content.innerHTML = renderMarkdown(acc);  // 收尾：去掉光标
       } catch (err) {
+        thinking.finish();
         content.innerHTML = renderMarkdown(acc + '\n\n[出错了：' + err.message + ']');
       } finally {
         bubble.classList.remove('streaming');
