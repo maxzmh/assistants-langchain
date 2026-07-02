@@ -111,10 +111,15 @@ async def delete_one(session_id: str, message_id: str) -> bool:
 
     两处存储都要同步动，顺序讲究：
       1) 先软删 checkpoint：通过极简图 `aupdate_state({..messages: [RemoveMessage(id=..)]})`
-         追加一个新 checkpoint，reducer 将目标消息从最新 state 中摘掉，
-         主 agent 下一轮不再看到这条消息。历史 checkpoint 仍保留，不打断链。
+         追加一个新 checkpoint。删单条不够——一次用户提问在 agent 内部可能生成
+         `ai(tool_calls) → tool(result) → ai(final)` 一串消息，前端只看得到 human
+         和最后那条 final ai。如果只删「叶子」，中间的 tool_calls + tool 会成为孤儿，
+         下一轮 agent 拿到 tool 结果就会「记得自己刚刚查过」→ 幻觉。
+         因此这里做**当前轮级联**：
+           * 删 human 时：删它 + 后面直到下一条 human 之前的所有 ai/tool
+           * 删 ai(final) 时：删它 + 同一轮内前面的 ai(tool_calls) + tool（回溯到上一条 human 之后）
       2) 再删 message_store：走 SQL 直接删该 session 下 message.data.id 匹配的行。
-         `SQLChatMessageHistory` 官方接口只有 aclear，只能落到直接 SQL。
+         message_store 里本来就只有 human/ai 两方，不需要级联。
 
     顺序理由：checkpoint 是「真身」。checkpoint 删掉但 message_store 没删 →
     前端还看得到但 agent 已忘记，用户重试即可修复；反过来就会出现「界面已消失
@@ -125,14 +130,20 @@ async def delete_one(session_id: str, message_id: str) -> bool:
     """
     graph = _get_delete_graph()
     config = {"configurable": {"thread_id": session_id}}
-    try:
-        await graph.aupdate_state(config, {"messages": [RemoveMessage(id=message_id)]})
-    except ValueError as e:
-        # add_messages reducer 找不到目标 id 会抛 ValueError（"doesn't exist"），
-        # 这在「消息只在 message_store 里、checkpoint 已被清 / 未记录」时会发生。
-        # 展示层的删除仍应继续进行，checkpoint 侧当作无操作。
-        if "doesn't exist" not in str(e):
-            raise
+
+    ids_to_remove = await _collect_round_ids(graph, config, message_id)
+    if ids_to_remove:
+        try:
+            await graph.aupdate_state(
+                config,
+                {"messages": [RemoveMessage(id=mid) for mid in ids_to_remove]},
+            )
+        except ValueError as e:
+            # add_messages reducer 找不到目标 id 会抛 ValueError（"doesn't exist"），
+            # 这在「消息只在 message_store 里、checkpoint 已被清 / 未记录」时会发生。
+            # 展示层的删除仍应继续进行，checkpoint 侧当作无操作。
+            if "doesn't exist" not in str(e):
+                raise
 
     pool = pg.get_pool()
     async with pool.connection() as conn:
@@ -143,3 +154,44 @@ async def delete_one(session_id: str, message_id: str) -> bool:
                 (session_id, message_id),
             )
             return cur.rowcount > 0
+
+
+async def _collect_round_ids(graph, config: dict, target_id: str) -> list[str]:
+    """定位 target_id 所在的对话轮，返回该轮内所有应一并删除的消息 id。
+
+    轮的定义：从上一条 human（不含）到下一条 human（不含）之间的连续消息。
+      * 目标是 human：返回 [目标 human] + 它之后直到下一条 human 之前的所有 ai/tool
+      * 目标是 ai：返回它所在轮内的所有 ai + tool（不含前一条 human，因为用户可能只想删
+        AI 的这次回答、保留自己的问题）
+    找不到目标时返回 []（比如仅在 message_store 里、checkpoint 已清）。
+    """
+    state = await graph.aget_state(config)
+    messages = (state.values or {}).get("messages", []) if state else []
+    if not messages:
+        return []
+
+    idx = next(
+        (i for i, m in enumerate(messages) if getattr(m, "id", None) == target_id),
+        None,
+    )
+    if idx is None:
+        return []
+
+    target = messages[idx]
+    target_type = getattr(target, "type", None)
+
+    if target_type == "human":
+        # human：向后延伸到下一条 human 前
+        end = idx + 1
+        while end < len(messages) and getattr(messages[end], "type", None) != "human":
+            end += 1
+        return [messages[i].id for i in range(idx, end)]
+
+    # ai：向前回溯到上一条 human 之后，向后延伸到下一条 human 前
+    start = idx
+    while start > 0 and getattr(messages[start - 1], "type", None) != "human":
+        start -= 1
+    end = idx + 1
+    while end < len(messages) and getattr(messages[end], "type", None) != "human":
+        end += 1
+    return [messages[i].id for i in range(start, end) if getattr(messages[i], "id", None)]
