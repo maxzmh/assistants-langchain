@@ -16,18 +16,24 @@ DB_URL: str = f"sqlite:///{DB_PATH}"
 def _patch_reasoning_passthrough() -> None:
     """把 OpenAI 兼容协议里 delta.reasoning_content 转发到 AIMessageChunk。
 
-    背景：豆包 Seed / DeepSeek-R1 等系列以 `reasoning_content` 字段流式返回思维链，
-    但 `langchain-openai` 0.3.x 的 delta→MessageChunk 转换器只识别 content/function_call/
-    tool_calls，直接丢掉这个字段。这里在导入时打一个小补丁：调用完原实现后，
-    如果原始 delta 里带 reasoning_content，就补进结果的 additional_kwargs，
+    背景：豆包 Seed / DeepSeek-R1 等系列以 `reasoning_content` 字段流式返回思维链。
+    `langchain-openai` 从 1.x 起明确只支持官方 OpenAI 协议、不再兼容第三方 provider 的
+    `reasoning_content`（见 `langchain_openai/chat_models/base.py` 的模块 docstring），
+    但底层私有函数 `_convert_delta_to_message_chunk` 仍存在。这里在导入时打一个小补丁：
+    调用完原实现后，如果原始 delta 里带 reasoning_content，就补进结果的 additional_kwargs，
     让上层能用 chunk.additional_kwargs["reasoning_content"] 消费。
 
     幂等：靠函数属性做守卫，重复 import 也只打一次。
+    容错：上游哪天真把这个私有函数删掉，就退化为不打补丁，不阻塞进程启动
+        （思维链流会丢，但对话/工具链路仍可用；届时应转用 provider-specific 包）。
     """
-    from langchain_openai.chat_models import base as _b
-    if getattr(_b._convert_delta_to_message_chunk, "_reasoning_patched", False):
+    try:
+        from langchain_openai.chat_models import base as _b
+        _orig = _b._convert_delta_to_message_chunk
+    except (ImportError, AttributeError):
         return
-    _orig = _b._convert_delta_to_message_chunk
+    if getattr(_orig, "_reasoning_patched", False):
+        return
 
     def _wrapped(_dict, default_class):
         chunk = _orig(_dict, default_class)

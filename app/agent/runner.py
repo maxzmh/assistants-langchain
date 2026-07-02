@@ -83,10 +83,7 @@ async def stream_events(
     final_text_parts: List[str] = []
     finished_ok = False
     try:
-        async for event in _get_agent().astream_events(
-            {"messages": input_msgs},
-            version="v2",
-        ):
+        async for event in _get_agent().astream_events({"messages": input_msgs}):
             kind = event.get("event")
             data = event.get("data") or {}
 

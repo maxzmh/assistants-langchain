@@ -1,0 +1,25 @@
+# cook-agent runtime deps
+# 升级到 langchain / langgraph 1.x(2026-07 快照)
+# Python >= 3.10 必需
+
+# LLM 框架
+langchain==1.3.11
+langchain-core==1.4.8
+langchain-openai==1.3.3
+langchain-community==0.4.2
+langchain-text-splitters==1.1.2
+langchain-tavily==0.2.18
+
+# LangGraph
+langgraph==1.2.7
+langgraph-checkpoint==4.1.1
+langgraph-prebuilt==1.1.0
+langgraph-sdk==0.4.2
+
+# Web / OpenAI SDK
+fastapi==0.128.8
+uvicorn==0.39.0
+pydantic==2.13.4
+python-dotenv>=1.0
+python-multipart>=0.0.20
+openai>=2.0
