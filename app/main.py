@@ -9,6 +9,7 @@ import sqlite3
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
+from app.chat.router import router as chat_router
 from app.config import DB_PATH
 from app.history.router import router as history_router
 from app.sessions import db as sessions_db
@@ -26,6 +27,7 @@ def _init_db() -> None:
 
 app.include_router(sessions_router)
 app.include_router(history_router)
+app.include_router(chat_router)
 
 
 @app.get("/")
