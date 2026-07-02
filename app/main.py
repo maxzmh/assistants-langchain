@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import pg
 from app.chat.router import router as chat_router
 from app.history.router import router as history_router
+from app.image.router import router as image_router
 from app.sessions.router import router as sessions_router
 
 
@@ -48,6 +49,7 @@ app.add_middleware(
 app.include_router(sessions_router)
 app.include_router(history_router)
 app.include_router(chat_router)
+app.include_router(image_router)
 
 
 @app.get("/")

@@ -20,3 +20,6 @@ chat_history.db
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# AI 生图运行时产物：只落本地磁盘，不入仓
+static/generated/

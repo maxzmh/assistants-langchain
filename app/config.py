@@ -2,6 +2,7 @@
 LangChain + Doubao 配置：LLM 工厂 + 全局路径常量。
 """
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -24,6 +25,13 @@ POSTGRES_URL_SA: str = (
     if POSTGRES_URL.startswith("postgresql+")
     else POSTGRES_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 )
+
+# 火山方舟图像生成模型 id；`ARK_IMAGE_MODEL` 可覆盖，默认走 Seedream 3.0 t2i。
+ARK_IMAGE_MODEL: str = os.getenv("ARK_IMAGE_MODEL", "doubao-seedream-3-0-t2i-250415")
+
+# 生成的图片下载后落盘的目录。相对项目根 —— 由 image.service 首次调用时 mkdir。
+# 路由 `GET /api/image/file/{name}` 从这里读文件回给前端。
+GENERATED_DIR: Path = Path(__file__).resolve().parents[1] / "static" / "generated"
 
 
 def _patch_reasoning_passthrough() -> None:

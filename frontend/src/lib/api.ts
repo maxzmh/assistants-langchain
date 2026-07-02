@@ -107,3 +107,35 @@ export async function streamChat(params: {
 export function newSessionId(): string {
   return 'web-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
+
+/** 文生图：非流式一次调用，返回本地存好的 image_url + 落库的 user_id/ai_id。 */
+export async function generateImage(params: {
+  sessionId: string;
+  prompt: string;
+  size: string;
+  style: string;
+}): Promise<{ image_url: string; user_id: string; ai_id: string; prompt: string }> {
+  const form = new FormData();
+  form.append('session_id', params.sessionId);
+  form.append('prompt', params.prompt);
+  form.append('size', params.size);
+  form.append('style', params.style);
+  const r = await fetch('/api/image/gen', { method: 'POST', body: form });
+  if (!r.ok) {
+    // 后端把上游生图 API 报错统一转 502 + detail。透传给上层做 Toast。
+    let detail = `HTTP ${r.status}`;
+    try {
+      const j = (await r.json()) as { detail?: string };
+      if (j.detail) detail = j.detail;
+    } catch {
+      /* body 不是 JSON 就用默认 detail */
+    }
+    throw new Error(detail);
+  }
+  return (await r.json()) as {
+    image_url: string;
+    user_id: string;
+    ai_id: string;
+    prompt: string;
+  };
+}

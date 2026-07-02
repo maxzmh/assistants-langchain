@@ -16,6 +16,7 @@ import {
   createSession,
   deleteMessage as apiDeleteMessage,
   deleteSession as apiDeleteSession,
+  generateImage,
   getHistory,
   listSessions,
   newSessionId,
@@ -23,7 +24,15 @@ import {
   type ChatEvent,
   type SessionItem,
 } from './lib/api';
-import { ITEM, STATUS, WELCOME_TEXT, type ChatMessage } from './lib/types';
+import {
+  IMAGE_SIZES,
+  IMAGE_STYLES,
+  ITEM,
+  STATUS,
+  WELCOME_TEXT,
+  type ChatMessage,
+  type Mode,
+} from './lib/types';
 
 /** 本地 id 生成器：Message.id / ContentItem.id 都需要稳定唯一。 */
 let _mid = 0;
@@ -70,13 +79,16 @@ function historyToContent(
   role: 'user' | 'assistant',
 ): ContentItem[] {
   if (role === 'assistant') {
-    // 助手历史直接给 markdown 字符串放到 output_text，走内置渲染
-    return text
+    // 助手历史：如果这条消息带图（画图模式产物），把图片作为 markdown 语法拼进
+    // 正文，Semi 内置 markdown 渲染会显示图。这样不用赌 image_url 段在 assistant
+    // 侧的兼容性，也让「文本 + 图」的顺序稳定。
+    const md = imageUrl ? `${text ? text + '\n\n' : ''}![](${imageUrl})` : text;
+    return md
       ? [
           {
             id: nextId('c'),
             type: ITEM.MESSAGE,
-            content: [{ type: ITEM.OUTPUT_TEXT, text }],
+            content: [{ type: ITEM.OUTPUT_TEXT, text: md }],
           } as ContentItem,
         ]
       : [];
@@ -146,6 +158,10 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatMessage[]>([]);
   const [generating, setGenerating] = useState(false);
+  // 画图模式状态：mode + 尺寸 + 风格。默认第一档尺寸 / 自然风格。
+  const [mode, setMode] = useState<Mode>('chat');
+  const [imageSize, setImageSize] = useState<string>(IMAGE_SIZES[0].value);
+  const [imageStyle, setImageStyle] = useState<string>(IMAGE_STYLES[0].value);
   const dirtyRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -259,6 +275,78 @@ export default function App() {
           | File
           | undefined) || null;
       if (!raw && !firstFile) return;
+
+      // —— 画图模式：走独立生图端点，非流式；不进 checkpoint，只写 message_store ——
+      if (mode === 'image') {
+        if (!raw) {
+          Toast.warning('请输入画图提示词');
+          return;
+        }
+        const userId = nextId();
+        const botId = nextId();
+        const now = Date.now();
+        // 用户气泡先展示 [画图] prompt，助手气泡先显示 loading
+        setChats((ms) => [
+          ...ms,
+          {
+            id: userId,
+            role: 'user',
+            content: buildUserContent(`[画图] ${raw}`, []),
+            status: STATUS.COMPLETED,
+            createdAt: now,
+          },
+          {
+            id: botId,
+            role: 'assistant',
+            content: [],
+            status: STATUS.IN_PROGRESS,
+            createdAt: now,
+          },
+        ]);
+        const wasFirst = !dirtyRef.current;
+        dirtyRef.current = true;
+        setGenerating(true);
+        try {
+          const res = await generateImage({
+            sessionId: activeId,
+            prompt: raw,
+            size: imageSize,
+            style: imageStyle,
+          });
+          // 助手气泡替换为「prompt + markdown 图」+ 挂 remoteId
+          setChats((ms) =>
+            ms.map((m) => {
+              if (m.id === userId) return { ...m, remoteId: res.user_id };
+              if (m.id === botId)
+                return {
+                  ...m,
+                  remoteId: res.ai_id,
+                  status: STATUS.COMPLETED,
+                  content: historyToContent(raw, res.image_url, 'assistant'),
+                };
+              return m;
+            }),
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          Toast.error('生图失败：' + msg);
+          patchAssistant(botId, (m) => ({
+            ...m,
+            status: STATUS.FAILED,
+            content: [
+              {
+                id: nextId('c'),
+                type: ITEM.MESSAGE,
+                content: [{ type: ITEM.OUTPUT_TEXT, text: `[生图失败] ${msg}` }],
+              } as ContentItem,
+            ],
+          }));
+        } finally {
+          setGenerating(false);
+          if (wasFirst) refreshSessions();
+        }
+        return;
+      }
 
       const userId = nextId();
       const botId = nextId();
@@ -470,7 +558,7 @@ export default function App() {
         if (wasFirst) refreshSessions();
       }
     },
-    [activeId, patchAssistant, refreshSessions],
+    [activeId, mode, imageSize, imageStyle, patchAssistant, refreshSessions],
   );
 
   useEffect(() => {
@@ -498,6 +586,12 @@ export default function App() {
         <ChatPane
           chats={chats}
           generating={generating}
+          mode={mode}
+          onModeChange={setMode}
+          imageSize={imageSize}
+          onImageSizeChange={setImageSize}
+          imageStyle={imageStyle}
+          onImageStyleChange={setImageStyle}
           onMessageSend={handleSend}
           onMessageDelete={handleDeleteMessage}
           onChatsChange={setChats}

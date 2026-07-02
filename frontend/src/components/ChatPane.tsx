@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { AIChatDialogue, AIChatInput, Avatar } from '@douyinfe/semi-ui';
+import { AIChatDialogue, AIChatInput, Avatar, Radio, RadioGroup, Select } from '@douyinfe/semi-ui';
 import type {
   RoleConfig,
   DialogueContentItemRendererMap,
@@ -12,10 +12,17 @@ import type {
 } from '@douyinfe/semi-foundation/lib/es/aiChatDialogue/foundation';
 import type { MessageContent } from '@douyinfe/semi-foundation/lib/es/aiChatInput/interface';
 import type { ChatMessage } from '../lib/types';
+import { IMAGE_SIZES, IMAGE_STYLES, type Mode } from '../lib/types';
 
 interface Props {
   chats: ChatMessage[];
   generating: boolean;
+  mode: Mode;
+  onModeChange: (m: Mode) => void;
+  imageSize: string;
+  onImageSizeChange: (v: string) => void;
+  imageStyle: string;
+  onImageStyleChange: (v: string) => void;
   onMessageSend: (payload: MessageContent) => void;
   onMessageDelete: (message: ChatMessage) => void;
   onChatsChange: (chats: ChatMessage[]) => void;
@@ -90,10 +97,18 @@ function renderDialogueAction(props: RenderActionProps) {
  * 主对话区：
  *   AIChatDialogue 负责历史消息 + 思考区(reasoning) + 工具步骤(steps) + Markdown/代码/图片全部渲染；
  *   AIChatInput 负责富文本输入 + 附件上传 + 停止按钮。
+ *   顶部有一个「对话 / 画图」模式 toggle，画图模式下补两个下拉（尺寸 / 风格），
+ *   并隐藏输入区的附件上传（生图端点不接受输入图）。
  */
 export function ChatPane({
   chats,
   generating,
+  mode,
+  onModeChange,
+  imageSize,
+  onImageSizeChange,
+  imageStyle,
+  onImageStyleChange,
   onMessageSend,
   onMessageDelete,
   onChatsChange,
@@ -103,6 +118,7 @@ export function ChatPane({
     (cs?: Message[]) => onChatsChange((cs as ChatMessage[] | undefined) ?? []),
     [onChatsChange],
   );
+  const isImage = mode === 'image';
   return (
     <>
       <div className="dialogue-scroll">
@@ -117,19 +133,52 @@ export function ChatPane({
           onMessageDelete={(m) => onMessageDelete(m as ChatMessage)}
         />
       </div>
+      <div className="mode-bar">
+        <RadioGroup
+          type="button"
+          value={mode}
+          onChange={(e) => onModeChange(e.target.value as Mode)}
+        >
+          <Radio value="chat">💬 对话</Radio>
+          <Radio value="image">🎨 画图</Radio>
+        </RadioGroup>
+        {isImage && (
+          <>
+            <Select
+              size="small"
+              value={imageSize}
+              onChange={(v) => onImageSizeChange(v as string)}
+              style={{ width: 180 }}
+              optionList={IMAGE_SIZES.map((s) => ({ label: s.label, value: s.value }))}
+            />
+            <Select
+              size="small"
+              value={imageStyle}
+              onChange={(v) => onImageStyleChange(v as string)}
+              style={{ width: 120 }}
+              optionList={IMAGE_STYLES.map((s) => ({ label: s.label, value: s.value }))}
+            />
+          </>
+        )}
+      </div>
       <div className="input-wrap">
         <AIChatInput
           keepSkillAfterSend={false}
-          placeholder="输入消息，可粘贴图片链接。Enter 发送，Shift+Enter 换行"
+          placeholder={
+            isImage ? '描述你想画的内容，例如：一只戴帽子的橘猫' : '输入消息，可粘贴图片链接。Enter 发送，Shift+Enter 换行'
+          }
           generating={generating}
           onMessageSend={onMessageSend}
           onStopGenerate={onStopGenerate}
-          uploadProps={{
-            // 附件仅作为 attachment 传给 onMessageSend，不真正上传
-            action: '',
-            accept: 'image/*',
-            limit: 1,
-          }}
+          uploadProps={
+            isImage
+              ? undefined // 画图模式不允许上传附件
+              : {
+                  action: '',
+                  accept: 'image/*',
+                  limit: 1,
+                }
+          }
         />
       </div>
     </>

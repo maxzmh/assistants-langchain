@@ -103,3 +103,11 @@ body {
 .input-wrap {
   flex-shrink: 0;
 }
+
+/* —— 输入区顶部的模式切换条 —— */
+.mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
