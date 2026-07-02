@@ -1,0 +1,155 @@
+    :root {
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --primary: #ff6b35;
+      --primary-soft: #fff0e9;
+      --text: #1f2329;
+      --muted: #8a9099;
+      --border: #ebedf0;
+      --sidebar: #fafbfc;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--text); height: 100vh;
+      display: flex; justify-content: center;
+    }
+    .app {
+      width: 100%; max-width: 1040px; height: 100vh;
+      display: flex; background: var(--panel);
+    }
+
+    /* —— 侧边栏：历史会话列表 —— */
+    .sidebar {
+      width: 260px; flex-shrink: 0; background: var(--sidebar);
+      border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    }
+    .sidebar .top { padding: 14px; }
+    .new-btn {
+      width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--primary);
+      background: var(--primary); color: #fff; cursor: pointer; font-size: 14px;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .new-btn:hover { opacity: .92; }
+    .session-list { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
+    .session-list .label {
+      font-size: 12px; color: var(--muted); padding: 6px 8px;
+    }
+    .session-item {
+      display: flex; align-items: center; gap: 6px; padding: 9px 10px;
+      border-radius: 8px; cursor: pointer; margin-bottom: 2px; font-size: 14px;
+    }
+    .session-item:hover { background: #eef0f2; }
+    .session-item.active { background: var(--primary-soft); color: var(--primary); }
+    .session-item .title {
+      flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .session-item .del {
+      border: none; background: transparent; cursor: pointer; color: var(--muted);
+      font-size: 14px; opacity: 0; flex-shrink: 0; padding: 2px 4px; border-radius: 4px;
+    }
+    .session-item:hover .del { opacity: 1; }
+    .session-item .del:hover { background: rgba(0,0,0,.08); color: #e23; }
+    .empty-tip { font-size: 13px; color: var(--muted); padding: 12px 10px; }
+
+    /* —— 主区域：对话 —— */
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    header .logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--primary); color: #fff; font-size: 20px;
+      display: grid; place-items: center;
+    }
+    header h1 { font-size: 17px; font-weight: 600; }
+    header p { font-size: 12px; color: var(--muted); }
+
+    #messages {
+      flex: 1; overflow-y: auto; padding: 20px;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .msg { display: flex; gap: 10px; max-width: 88%; }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+      display: grid; place-items: center; font-size: 16px;
+    }
+    .msg.user .avatar { background: var(--primary); color: #fff; }
+    .msg.bot .avatar { background: var(--primary-soft); }
+    .bubble {
+      padding: 10px 14px; border-radius: 14px; line-height: 1.6;
+      font-size: 15px; white-space: pre-wrap; word-break: break-word;
+    }
+    .msg.user .bubble { background: var(--primary); color: #fff; border-top-right-radius: 4px; }
+    .msg.bot .bubble { background: var(--bg); border-top-left-radius: 4px; }
+    .bubble img { max-width: 220px; border-radius: 10px; margin-bottom: 8px; display: block; }
+    .bubble .cursor { display: inline-block; width: 7px; height: 16px;
+      background: var(--muted); animation: blink 1s steps(2) infinite; vertical-align: text-bottom; }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* —— Markdown 渲染样式（仅作用于助手消息）—— */
+    .bubble.md { white-space: normal; }
+    .bubble.md > :first-child { margin-top: 0; }
+    .bubble.md > :last-child { margin-bottom: 0; }
+    .bubble.md h1, .bubble.md h2, .bubble.md h3, .bubble.md h4 {
+      margin: 14px 0 8px; line-height: 1.35; font-weight: 600;
+    }
+    .bubble.md h1 { font-size: 19px; }
+    .bubble.md h2 { font-size: 17px; }
+    .bubble.md h3 { font-size: 16px; color: var(--primary); }
+    .bubble.md h4 { font-size: 15px; }
+    .bubble.md p { margin: 8px 0; }
+    .bubble.md ul, .bubble.md ol { margin: 8px 0; padding-left: 22px; }
+    .bubble.md li { margin: 4px 0; }
+    .bubble.md li::marker { color: var(--primary); }
+    .bubble.md strong { font-weight: 600; }
+    .bubble.md em { font-style: italic; }
+    .bubble.md a { color: var(--primary); text-decoration: underline; }
+    .bubble.md hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+    .bubble.md blockquote {
+      margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--primary);
+      background: #fff; color: var(--muted); border-radius: 0 6px 6px 0;
+    }
+    .bubble.md code {
+      background: #eef0f2; padding: 1px 5px; border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px;
+    }
+    .bubble.md pre {
+      background: #1f2329; color: #e6e6e6; padding: 12px 14px; border-radius: 10px;
+      overflow-x: auto; margin: 10px 0;
+    }
+    .bubble.md pre code { background: transparent; color: inherit; padding: 0; font-size: 13px; }
+    .bubble.md table { border-collapse: collapse; margin: 10px 0; width: 100%; font-size: 14px; }
+    .bubble.md th, .bubble.md td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+    .bubble.md th { background: var(--primary-soft); }
+
+    .composer {
+      border-top: 1px solid var(--border); padding: 12px 16px; flex-shrink: 0;
+    }
+    #preview {
+      display: none; position: relative; width: 72px; height: 72px;
+      margin-bottom: 10px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border);
+    }
+    #preview img { width: 100%; height: 100%; object-fit: cover; }
+    #preview .remove {
+      position: absolute; top: 2px; right: 2px; width: 20px; height: 20px;
+      border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; border: none;
+      cursor: pointer; font-size: 13px; line-height: 20px; padding: 0;
+    }
+    .input-row { display: flex; align-items: flex-end; gap: 8px; }
+    .icon-btn {
+      width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border);
+      background: #fff; cursor: pointer; font-size: 18px; flex-shrink: 0;
+      display: grid; place-items: center; transition: .15s;
+    }
+    .icon-btn:hover { background: var(--bg); }
+    #text {
+      flex: 1; resize: none; border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px; font-size: 15px; font-family: inherit; line-height: 1.5;
+      max-height: 120px; outline: none;
+    }
+    #text:focus { border-color: var(--primary); }
+    #send { background: var(--primary); color: #fff; border: none; }
+    #send:disabled { opacity: .5; cursor: not-allowed; }
