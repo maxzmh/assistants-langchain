@@ -1,0 +1,16 @@
+# Python virtual environment
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Environment / secrets
+.env
+
+# SQLite 对话历史
+*.db
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
