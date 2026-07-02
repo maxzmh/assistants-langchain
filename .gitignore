@@ -16,3 +16,7 @@ __pycache__/
 .DS_Store
 chat_history.db
 .venv.py39.bak
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
