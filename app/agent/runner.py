@@ -1,5 +1,5 @@
 """
-Agent runner：跑 LangGraph 的 ReAct agent，把 astream_events(v2) 的事件
+Agent runner：跑 LangChain 1.x 的 create_agent，把 astream_events 的事件
 翻译成前端 SSE 帧。
 
 对外只暴露 `stream_events()` 这一个 async generator，
@@ -8,11 +8,12 @@ Agent runner：跑 LangGraph 的 ReAct agent，把 astream_events(v2) 的事件
 from __future__ import annotations
 
 import json
+from pyexpat import model
 from typing import Any, AsyncGenerator, List, Union
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph.prebuilt import create_react_agent
-
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware
 from app.agent.tools import build_tools
 from app.chat.prompts import SYSTEM_PROMPT
 from app.config import get_llm
@@ -25,10 +26,14 @@ _agent = None
 def _get_agent():
     global _agent
     if _agent is None:
-        _agent = create_react_agent(
+        _agent = create_agent(
             model=get_llm(),
             tools=build_tools(),
-            prompt=SystemMessage(content=SYSTEM_PROMPT),
+            system_prompt=SYSTEM_PROMPT,
+            middleware=[SummarizationMiddleware(
+                model=get_llm(), 
+                trigger=("tokens", 4000),
+                keep=("messages", 20),)],
         )
     return _agent
 
